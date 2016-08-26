@@ -6,6 +6,8 @@ import datetime
 """
 class Host():
 
+	__vendors_url =  "http://api.macvendors.com/"
+
 	def __init__(self, address):
 		self.ip = address
 		self.discovery_time = datetime.datetime.now()
@@ -20,7 +22,6 @@ class Host():
 		cmd = "arp -n " + self.ip
 		process = Popen(cmd, shell=True, stdout=PIPE)
 		saida, erro = process.communicate()
-		print(saida)
 		mac_address = saida.split()[8].decode()
 		if self.mac_address == "Unknown":
 			self.mac_address = mac_address
@@ -33,10 +34,10 @@ class Host():
 	def poll(self):
 		ping = Popen("ping -c 1 "+self.ip, shell=True, stdout=PIPE)
 		saida, erro = ping.communicate()
-		print(saida)
 		latency = saida.split()[13].decode()
 		if "time" in latency:
 			self._get_mac_address()
+			self._get_vendor()
 			self.latency = float(latency[5:])
 			self._update_state("Up")
 		elif latency == '---':
@@ -66,6 +67,20 @@ class Host():
 			time_delta_string = str(td.seconds) + " seconds ago"
 
 		return time_delta_string
+
+
+	def _get_vendor(self):
+		if self.mac_address == "Unknown":
+			self.vendor = "Unknown"
+			return
+
+		request = requests.get(self.__vendors_url+self.mac_address)
+
+		if request.status_code == 200:
+			self.vendor = request.content.decode()
+		else:
+			self.vendor = "Unknown"
+			#Setar flag de vendor pra fail ou coisa assim
 
 
 	def __str__(self):
