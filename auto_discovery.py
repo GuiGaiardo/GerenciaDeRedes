@@ -1,9 +1,10 @@
 from subprocess import *
 import requests
 import datetime
-
 import netifaces
 import ipaddress
+import time
+
 
 class Host():
 
@@ -107,6 +108,7 @@ class Host():
 			return self.ip + " " + self.mac_address + " " + self.vendor + " " + str(self.router) + " " + self.state + " " + self._get_elapsed_time()
 		else:
 			return self.ip + " " + self.state + " " + self._get_elapsed_time()
+
 ####################################################################################################################################
 
 class Net_Infos():
@@ -142,8 +144,7 @@ class Net_Infos():
 
 class Net_Discovery():
 
-	def __init__(self, poll_frequency):
-		self.poll_frequency = poll_frequency
+	def __init__(self):
 		self.net_infos = Net_Infos()
 		self.online_devices = []
 		self.offline_devices = []
@@ -173,7 +174,7 @@ class Net_Discovery():
 		else:
 			print("NO NETWORK DETECTED!!")
 
-	def _check_devices(self):
+	def check_devices(self):
 		for host in self.online_devices:
 			if str(host.ip) != self.net_infos.requester_ip:
 				host.poll()
@@ -218,5 +219,20 @@ class Net_Discovery():
 
 ####################################################################################################################################
 
-teste = Net_Discovery(60)
-teste._check_devices()
+class Net_Checker():
+
+	def __init__(self, poll_frequency):
+		self.poll_frequency = poll_frequency
+		self.check_activation = True
+		self.net_data = Net_Discovery()
+		self._check_routine()
+
+	#Esse método deve ser disparado em uma thread
+	def _check_routine(self):
+		while self.check_activation:
+			time.sleep(self.poll_frequency)
+			self.net_data.check_devices()
+
+####################################################################################################################################
+
+teste = Net_Checker(20)
