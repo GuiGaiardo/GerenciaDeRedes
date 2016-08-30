@@ -13,8 +13,8 @@ class Host():
 		if len(args) == 2:
 			self.ip = args[0]
 			self.discovery_time = datetime.datetime.now()
-			self.mac_address = "Unknown"
-			self.last_mac_address = "Unknown"
+			self.mac_address = "Unknow"
+			self.last_mac_address = "Unknow"
 			self.last_discovery_time = "Unknow"
 			self.router = args[1]
 			self.poll()
@@ -22,7 +22,7 @@ class Host():
 			self.ip = args[0]
 			self.discovery_time = args[1]
 			self.mac_address = args[2]
-			self.last_mac_address = "Unknown"
+			self.last_mac_address = "Unknow"
 			self.last_discovery_time = "Unknow"
 			self.router = args[3]
 			self.last_polled = datetime.datetime.now()
@@ -40,7 +40,7 @@ class Host():
 		process = Popen(cmd, shell=True, stdout=PIPE)
 		saida, erro = process.communicate()
 		mac_address = saida.split()[8].decode()
-		if self.mac_address == "Unknown":
+		if self.mac_address == "Unknow":
 			self.mac_address = mac_address
 		elif self.mac_address == mac_address:
 			return
@@ -63,7 +63,7 @@ class Host():
 		elif latency == '---':
 			self._update_state("Down")
 		else:
-			self._update_state("Unknown")
+			self._update_state("Unknow")
 
 		self.last_polled = datetime.datetime.now()
 
@@ -90,8 +90,8 @@ class Host():
 
 
 	def _get_vendor(self):
-		if self.mac_address == "Unknown":
-			self.vendor = "Unknown"
+		if self.mac_address == "Unknow":
+			self.vendor = "Unknow"
 			return
 
 		request = requests.get(self.__vendors_url+self.mac_address)
@@ -99,7 +99,7 @@ class Host():
 		if request.status_code == 200:
 			self.vendor = request.content.decode()
 		else:
-			self.vendor = "Unknown"
+			self.vendor = "Unknow"
 
 
 	def __str__(self):
@@ -154,22 +154,22 @@ class Net_Discovery():
 		if self.net_infos.net_conf != "Unknow":
 			network_ips = ipaddress.ip_network(self.net_infos.net_conf + "/" + self.net_infos.net_mask).hosts()
 			for host_ip in network_ips:
-
-				if str(host_ip) != str(self.net_infos.requester_ip): 
-					if (str(host_ip) != self.net_infos.net_gateway):
-						host_check = Host(str(host_ip), False)
-						print(str(host_check)) #teste
+				if int(str(host_ip).split(".")[3]) < 3 or (int(str(host_ip).split(".")[3]) > 9 and int(str(host_ip).split(".")[3]) < 12): #teste delimitador
+					if str(host_ip) != str(self.net_infos.requester_ip): 
+						if (str(host_ip) != self.net_infos.net_gateway):
+							host_check = Host(str(host_ip), False)
+							print(str(host_check)) #teste
+						else:
+							host_check = Host(str(host_ip), True)
+							print(str(host_check)) #teste
 					else:
-						host_check = Host(str(host_ip), True)
-						print(str(host_check)) #teste
-				else:
-					host_check = Host(str(self.net_infos.requester_ip), datetime.datetime.now(), str(self.net_infos.requester_mac), False)
-					host_check.define_server_host()
-					print(str(host_check))
-				if host_check.state == "Up":
-					self.online_devices.append(host_check)
-				else:
-					self.offline_devices.append(host_check)
+						host_check = Host(str(self.net_infos.requester_ip), datetime.datetime.now(), str(self.net_infos.requester_mac), False)
+						host_check.define_server_host()
+						print(str(host_check))
+					if host_check.state == "Up":
+						self.online_devices.append(host_check)
+					else:
+						self.offline_devices.append(host_check)
 		else:
 			print("NO NETWORK DETECTED!!")
 
@@ -199,6 +199,8 @@ class Net_Discovery():
 			print(str(host)) #teste
 
 		##testes
+		print("\n\n\n")
+
 		for host in self.online_devices:
 			print(str(host.ip))
 
