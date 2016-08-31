@@ -5,7 +5,6 @@ import netifaces
 import ipaddress
 import time
 
-
 class Host():
 
 	__vendors_url =  "http://api.macvendors.com/"
@@ -159,10 +158,14 @@ class Net_Discovery():
 					if str(host_ip) != str(self.net_infos.requester_ip): 
 						if (str(host_ip) != self.net_infos.net_gateway):
 							host_check = Host(str(host_ip), False)
-							print(str(host_check)) #teste
+							#########Teste########
+							print(str(host_check))
+							######################
 						else:
 							host_check = Host(str(host_ip), True)
-							print(str(host_check)) #teste
+							#########Teste#########
+							print(str(host_check))
+							#######################
 					else:
 						host_check = Host(str(self.net_infos.requester_ip), datetime.datetime.now(), str(self.net_infos.requester_mac), False)
 						host_check.define_server_host()
@@ -191,15 +194,19 @@ class Net_Discovery():
 				else:
 					self.online_devices.remove(host)
 					self.offline_devices.append(host)
-			print(str(host)) #teste
+			######Teste#####
+			print(str(host))
+			################
 		for host in self.offline_devices:
 			host.poll()
 			if (host.state == "Up"):
 				self.offline_devices.remove(host)
 				self.online_devices.append(host)
-			print(str(host)) #teste
+			######Teste#####
+			print(str(host))
+			################
 
-		##testes
+		################Testes####################
 		print("\n\n\n")
 
 		for host in self.online_devices:
@@ -214,7 +221,7 @@ class Net_Discovery():
 
 		for host in self.deprecated_devices:
 			print(str(host.ip))
-		########
+		#########################################
 
 
 ####################################################################################################################################
@@ -225,9 +232,8 @@ class Net_Checker():
 		self.poll_frequency = poll_frequency
 		self.check_activation = True
 		self.net_data = Net_Discovery()
-		self._check_routine()
+		Popen(self._check_routine())
 
-	#Esse método deve ser disparado em uma thread
 	def _check_routine(self):
 		while self.check_activation:
 			time.sleep(self.poll_frequency)
