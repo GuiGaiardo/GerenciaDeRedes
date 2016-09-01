@@ -1,71 +1,106 @@
 from subprocess import *
+from multiprocessing import Process, Manager
+import sys
+import time
+
 import requests
 import datetime
 import netifaces
 import ipaddress
-import time
+
 
 class Host():
 
 	__vendors_url =  "http://api.macvendors.com/"
 
-	def __init__(self, *args):
-		if len(args) == 2:
-			self.ip = args[0]
-			self.discovery_time = datetime.datetime.now()
-			self.mac_address = "Unknow"
-			self.last_mac_address = "Unknow"
-			self.last_discovery_time = "Unknow"
-			self.router = args[1]
-			self.poll()
-		if len(args) == 4:
-			self.ip = args[0]
-			self.discovery_time = args[1]
-			self.mac_address = args[2]
-			self.last_mac_address = "Unknow"
-			self.last_discovery_time = "Unknow"
-			self.router = args[3]
-			self.last_polled = datetime.datetime.now()
+	def __init__(self, ip):
+		self.ip = ip
+		self.discovery_time = "Unknown"
+		self.last_discovery_time = "Unknown"
+		self.mac_address = "Unknown"
+		self.last_mac_address = "Unknown"
+		self.vendor = "Unknown"
+		self.state = "Unknown"
+		self.latency = 0
 
 	def define_server_host(self):
 		self.latency = 0;
 		self._get_vendor()
-		self._update_state("Up")
+		self.state("Up")
 
-	def _update_state(self, state):
-		self.state = state
+	def _teste(self):
+		print(self.ip)
+		self.ip = "192.168.25.2"
 
-	def _get_mac_address(self):
+	def _get_mac_address(self, deprecateds):
 		cmd = "arp -n " + self.ip
 		process = Popen(cmd, shell=True, stdout=PIPE)
 		saida, erro = process.communicate()
+		if len(saida.split()) < 8:
+			print("Erro ao pegar MAC de " + self.ip)
+			self.mac_address = "Unknown"
+			return
+
 		mac_address = saida.split()[8].decode()
-		if self.mac_address == "Unknow":
+
+		if self.mac_address == "Unknown":
 			self.mac_address = mac_address
 		elif self.mac_address == mac_address:
 			return
 		else:
-			self.last_mac_address = self.mac_address
+			self._deprecate(deprecateds)
 			self.mac_address = mac_address
-			self.last_discovery_time = self.discovery_time
 			self.discovery_time = datetime.datetime.now()
+		self._get_vendor()
 
 
-	def poll(self):
+	def _deprecate(self, deprecateds):
+		if self.last_mac_address not in deprecateds:
+			deprecateds[self.mac_address] = ([self.ip], [self.last_polled], [self.discovery_time])
+		else:
+			deprecateds[self.mac_address][1].append(self.ip)
+			deprecateds[self.mac_address][2].append(self.last_polled)
+			deprecateds[self.mac_address][3].append(self.discovery_time)
+
+
+	def _set_state(self, state, ups, downs):
+		if self.ip in ups.keys() and state == "Down":
+			ups.pop(self.ip)
+			downs[self.ip] = self.get_state()
+
+		elif self.ip in downs.keys() and state == "Up":
+			downs.pop(self.ip)
+			ups[self.ip] = self.get_state()
+
+		elif state == "Up":
+			ups[self.ip] = self.get_state()
+
+		elif state == "Down" or state == "Unknown":
+			downs[self.ip] = self.get_state()
+
+		self.state = state
+
+
+	def get_state(self):
+		return (self.mac_address, self.last_polled, self.vendor, self.latency)
+
+
+	def poll(self, ups, downs, deprecateds):
 		ping = Popen("ping -c 1 "+self.ip, shell=True, stdout=PIPE)
 		saida, erro = ping.communicate()
 		latency = saida.split()[13].decode()
-		if "time" in latency:
-			self._get_mac_address()
-			self._get_vendor()
-			self.latency = float(latency[5:])
-			self._update_state("Up")
-		elif latency == '---':
-			self._update_state("Down")
-		else:
-			self._update_state("Unknow")
-
 		self.last_polled = datetime.datetime.now()
+		if "errors" in saida.decode():
+			self.latency = 0
+			self._set_state("Down", ups, downs)
+		elif "1 received" in saida.decode():
+			self._get_mac_address(deprecateds)
+			self.latency = float(latency[5:])
+			self._set_state("Up", ups, downs)
+		else:
+			self.latency = 0
+			self._set_state("Unknown", ups, downs)
+
 
 	def _get_elapsed_time(self):
 		td = datetime.datetime.now() - self.last_polled
@@ -90,8 +125,8 @@ class Host():
 
 
 	def _get_vendor(self):
-		if self.mac_address == "Unknow":
-			self.vendor = "Unknow"
+		if self.mac_address == "Unknown":
+			self.vendor = "Unknown"
 			return
 
 		request = requests.get(self.__vendors_url+self.mac_address)
@@ -99,7 +134,7 @@ class Host():
 		if request.status_code == 200:
 			self.vendor = request.content.decode()
 		else:
-			self.vendor = "Unknow"
+			self.vendor = "Unknown"
 
 
 	def __str__(self):
@@ -113,11 +148,11 @@ class Host():
 class Net_Infos():
 
 	def __init__(self):
-		self.requester_ip = "Unknow"
-		self.requester_mac = "Unknow"
-		self.net_conf = "Unknow"
-		self.net_mask = "Unknow"
-		self.net_gateway = "Unknow"
+		self.requester_ip = "Unknown"
+		self.requester_mac = "Unknown"
+		self.net_conf = "Unknown"
+		self.net_mask = "Unknown"
+		self.net_gateway = "Unknown"
 		self._get_operational_interface()
 	
 	def _get_operational_interface(self):
@@ -141,104 +176,84 @@ class Net_Infos():
 
 ####################################################################################################################################
 
-class Net_Discovery():
+class NetController():
 
 	def __init__(self):
+		self._initialize_net_infos()
+		manager = Manager()
+		self.up_devices = manager.dict()
+		self.down_devices = manager.dict()
+		self.deprecated_devices = manager.dict()
+		self._start_hosts()
+
+
+	def _initialize_net_infos(self):
 		self.net_infos = Net_Infos()
-		self.online_devices = []
-		self.offline_devices = []
-		self.deprecated_devices = []
-		self._first_check_devices()
+		if self.net_infos.net_conf == "Unknown":
+			print("Invalid network.")
+			exit(0)
 
-	def _first_check_devices(self):
-		if self.net_infos.net_conf != "Unknow":
-			network_ips = ipaddress.ip_network(self.net_infos.net_conf + "/" + self.net_infos.net_mask).hosts()
-			for host_ip in network_ips:
-				if int(str(host_ip).split(".")[3]) < 3 or (int(str(host_ip).split(".")[3]) > 9 and int(str(host_ip).split(".")[3]) < 12): #teste delimitador
-					if str(host_ip) != str(self.net_infos.requester_ip): 
-						if (str(host_ip) != self.net_infos.net_gateway):
-							host_check = Host(str(host_ip), False)
-							#########Teste########
-							print(str(host_check))
-							######################
-						else:
-							host_check = Host(str(host_ip), True)
-							#########Teste#########
-							print(str(host_check))
-							#######################
-					else:
-						host_check = Host(str(self.net_infos.requester_ip), datetime.datetime.now(), str(self.net_infos.requester_mac), False)
-						host_check.define_server_host()
-						print(str(host_check))
-					if host_check.state == "Up":
-						self.online_devices.append(host_check)
-					else:
-						self.offline_devices.append(host_check)
-		else:
-			print("NO NETWORK DETECTED!!")
+		self.network_ips = ipaddress.ip_network(self.net_infos.net_conf + "/" + self.net_infos.net_mask).hosts()
 
-	def check_devices(self):
-		for host in self.online_devices:
-			if str(host.ip) != self.net_infos.requester_ip:
-				host.poll()
-				if (host.state == "Up"):
-					if (host.last_mac_address != "Unknow"):
-						for deprecated_host in self.deprecated_devices:
-							if deprecated_host.ip == host.ip and deprecated_host.mac_address == host.mac_address:
-								self.deprecated_devices.remove(deprecated_host)
-								break
-						deprecated_host = Host(host.ip, host.last_discovery_time, host.last_mac_address, host.router)
-						self.deprecated_devices.append(deprecated_host)
-						host.last_mac_address = "Unknow"
-						host.last_discovery_time = "Unknow"
-				else:
-					self.online_devices.remove(host)
-					self.offline_devices.append(host)
-			######Teste#####
-			print(str(host))
-			################
-		for host in self.offline_devices:
-			host.poll()
-			if (host.state == "Up"):
-				self.offline_devices.remove(host)
-				self.online_devices.append(host)
-			######Teste#####
-			print(str(host))
-			################
+	def _start_hosts(self):
+		self.hosts = []
+		c = 1
+		for host_ip in self.network_ips:
+			if str(host_ip) == self.net_infos.requester_ip:
+				continue
 
+			host = Host(str(host_ip))
+			self.hosts.append(host)
+			c += 1
+			if c == 5:
+				break
+
+	def regular_check(self, poll_frequency):
+		while True:
+			procs = []
+			for host in self.hosts:
+				if host.ip == self.net_infos.requester_ip:
+					continue
+				proc = Process(target=host.poll, args=(self.up_devices, self.down_devices, self.deprecated_devices))
+				proc.start()
+				procs.append(proc)
+
+			for proc in procs:
+				proc.join()
+			
+			self.print_tables()
+			time.sleep(poll_frequency)
+
+
+	def print_tables(self):
 		################Testes####################
 		print("\n\n\n")
 
-		for host in self.online_devices:
-			print(str(host.ip))
+		for host in self.up_devices.keys():
+			print(host + str(self.up_devices[host]))
 
 		print("\n\n\n")
 
-		for host in self.offline_devices:
-			print(str(host.ip))
+		for host in self.down_devices.keys():
+			print(host + str(self.down_devices[host]))
 
 		print("\n\n\n")
 
-		for host in self.deprecated_devices:
-			print(str(host.ip))
+		for host in self.deprecated_devices.keys():
+			print(host + str(self.deprecated_devices[host]))
 		#########################################
 
 
-####################################################################################################################################
 
-class Net_Checker():
 
-	def __init__(self, poll_frequency):
-		self.poll_frequency = poll_frequency
-		self.check_activation = True
-		self.net_data = Net_Discovery()
-		Popen(self._check_routine())
 
-	def _check_routine(self):
-		while self.check_activation:
-			time.sleep(self.poll_frequency)
-			self.net_data.check_devices()
+#######################################################################################################################
+if len(sys.argv) != 2:
+	print("Usage: python3 auto_discovery.py <poll frequency(seconds)>")
+	print("Example: python3 auto_discovery.py 60")
+	exit(0)
 
-####################################################################################################################################
+poll_frequency = int(sys.argv[1])
 
-teste = Net_Checker(20)
+nc = NetController()
+nc.regular_check(poll_frequency)
