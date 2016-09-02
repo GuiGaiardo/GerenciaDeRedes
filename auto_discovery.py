@@ -9,6 +9,10 @@ import netifaces
 import ipaddress
 
 
+from gui import GUI
+import tkinter
+
+
 class Host():
 
 	__vendors_url =  "http://api.macvendors.com/"
@@ -184,8 +188,22 @@ class NetController():
 		self.up_devices = manager.dict()
 		self.down_devices = manager.dict()
 		self.deprecated_devices = manager.dict()
+		self.alive = True
+		self.gui = GUI()
+		self._start_gui()
 		self._start_hosts()
 
+	def _start_gui(self):
+		self.gui.update()
+		#proc = Process(target=self._gui_loop, args=(self.gui))
+		#proc.start()
+
+	def _gui_loop(self, gui):
+		#self.gui = GUI()
+		gui.mainloop()
+		#alive = False
+		#como parar o outro processo?
+		print("It's dead")
 
 	def _initialize_net_infos(self):
 		self.net_infos = Net_Infos()
@@ -221,9 +239,20 @@ class NetController():
 			for proc in procs:
 				proc.join()
 			
-			self.print_tables()
+			#self.print_tables()
+			
+			try:
+				self.update_tables()
+			except:
+				break
+			
+
 			time.sleep(poll_frequency)
 
+		print("System is dead, I'm now exiting...")
+
+	def update_tables(self):
+		self.gui.update_tables(self.up_devices, self.down_devices, self.deprecated_devices)
 
 	def print_tables(self):
 		################Testes####################
@@ -257,3 +286,6 @@ poll_frequency = int(sys.argv[1])
 
 nc = NetController()
 nc.regular_check(poll_frequency)
+
+#teste = GUI()
+#mainloop
