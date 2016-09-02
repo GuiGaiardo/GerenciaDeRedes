@@ -89,10 +89,17 @@ class Host():
 		return (self.mac_address, self.last_polled, self.vendor, self.latency)
 
 
-	def poll(self, ups, downs, deprecateds):
+	def poll(self, ups, downs, deprecateds, ns=None):
 		ping = Popen("ping -c 1 "+self.ip, shell=True, stdout=PIPE)
 		saida, erro = ping.communicate()
-		latency = saida.split()[13].decode()
+		
+		try:
+			latency = saida.split()[13].decode()
+		except:
+			if ns:
+				ns.p_poll = False
+				return
+		
 		self.last_polled = datetime.datetime.now()
 		if "errors" in saida.decode():
 			self.latency = 0
@@ -189,21 +196,34 @@ class NetController():
 		self.down_devices = manager.dict()
 		self.deprecated_devices = manager.dict()
 		self.alive = True
-		self.gui = GUI()
+		self.ns = Manager().Namespace()
+		self.ns.p_poll = True
+						
+		root = tkinter.Tk()			
+		self.gui = GUI(self, root)
+
 		self._start_gui()
 		self._start_hosts()
 
-	def _start_gui(self):
-		self.gui.update()
-		#proc = Process(target=self._gui_loop, args=(self.gui))
-		#proc.start()
 
-	def _gui_loop(self, gui):
-		#self.gui = GUI()
-		gui.mainloop()
-		#alive = False
-		#como parar o outro processo?
-		print("It's dead")
+	def _start_gui(self):
+		self.alive = True
+		self.ns.alive = self.alive
+		proc = Process(target=self._update_gui, args=(self.ns,))
+		proc.start()
+
+	def _update_gui(self, ns):
+		while True:
+			try:
+				self.update_tables()
+				self.gui.update()
+			except:
+				print("System is dead, I'm now exiting...")
+				ns.alive = False
+				exit(0)
+
+	def _loop_gui(self):
+		self.gui.update()
 
 	def _initialize_net_infos(self):
 		self.net_infos = Net_Infos()
@@ -226,8 +246,25 @@ class NetController():
 			if c == 5:
 				break
 
+	def particular_poll(self, ip):
+		if ip == self.net_infos.requester_ip:
+			return
+
+		host = Host(ip)
+		proc = Process(target=host.poll, args=(self.up_devices, self.down_devices, self.deprecated_devices, self.ns))
+		proc.start()
+		proc.join()
+
+		if self.ns.p_poll:
+			return (self.up_devices, self.down_devices, self.deprecated_devices)
+		else:
+			self.ns.p_poll = True
+			return (None, None, None)
+		
+		
+
 	def regular_check(self, poll_frequency):
-		while True:
+		while self.ns.alive:
 			procs = []
 			for host in self.hosts:
 				if host.ip == self.net_infos.requester_ip:
@@ -239,17 +276,20 @@ class NetController():
 			for proc in procs:
 				proc.join()
 			
-			#self.print_tables()
-			
 			try:
 				self.update_tables()
 			except:
 				break
 			
+			if not self.ns.alive or not self.alive:
+				print("Bye!!")
+				exit(0)
 
 			time.sleep(poll_frequency)
-
-		print("System is dead, I'm now exiting...")
+			
+			if not self.ns.alive or not self.alive:
+				print("Bye!!")
+				exit(0)
 
 	def update_tables(self):
 		self.gui.update_tables(self.up_devices, self.down_devices, self.deprecated_devices)
